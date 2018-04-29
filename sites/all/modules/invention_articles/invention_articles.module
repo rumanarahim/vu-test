@@ -1,0 +1,191 @@
+<?php
+/**
+ * @file
+ * A block module that lists articles with the word "Invention" in the title
+ */
+
+/**
+ * Implements hook_help().
+ *
+ * Displays help and module information.
+ *
+ * @param path 
+ *   Which path of the site we're using to display help
+ * @param arg 
+ *   Array that holds the current path as returned from arg() function
+ */
+function invention_articles_help($path, $arg) {
+  switch ($path) {
+    case "admin/help#invention_articles":
+      return t("Displays the latest five links to articles with the word 'Invention' in the title"); 
+      break; 
+  }
+}
+
+/**
+ * Implements hook_block_info().
+ */
+function invention_articles_block_info() {
+  $blocks['invention_articles'] = array(
+    // The name that will appear in the block list.
+    'info' => t('Invention articles'),
+    // Default setting.
+    'cache' => DRUPAL_CACHE_PER_ROLE,
+  );
+  return $blocks;
+}
+
+/**
+ * Custom content function. 
+ * 
+ * Retrieve the latest articles with 'Invention' in the title
+ * 
+ * @return 
+ *   A result set of the articles.
+ */
+function invention_articles_contents(){  
+  //Get the maximum number of articles to display
+  $max_num = variable_get('invention_articles_max', 5);
+
+  //Use Database API to retrieve articles with 'invention' in the title
+  $query = db_select('node', 'n');
+  $query->leftJoin('field_data_body', 'd', 'd.entity_id = n.nid AND d.entity_type = \'node\'');
+  $result = $query->fields('n', array('nid', 'title', 'created', 'changed'))
+    ->fields('d', array('body_summary'))
+    ->condition('status', 1) //Published
+    ->condition('type', 'article') //Article
+    ->condition('title', '%' . db_like('Invention') . '%', 'LIKE') //Invention in the title
+    ->orderBy('changed', 'DESC') //Most recent first.
+    ->range(0, $max_num) //Limited by maximum number of articles to display
+    ->execute(); 
+    
+  return $result;  
+}
+
+/**
+ * Implements hook_block_view().
+ * 
+ * Prepares the contents of the block.
+ */
+function invention_articles_block_view($delta = '') {
+    //echo "Hello World";
+    switch ($delta) {
+      case 'invention_articles':
+        $block['subject'] = t('Invention Articles');
+        if (user_access('access content')) {
+          // Use our custom function to retrieve data.
+          $result = invention_articles_contents();
+          // Array to contain items for the block to render.
+          $items = array();
+          // Iterate over the resultset
+          foreach ($result as $node) {
+            $updatedDate = new DateTime();
+            $updatedDate->setTimestamp($node->changed);
+            $items[] = array(
+              'title' => $node->title,
+              'link' => 'node/' . $node->nid,
+              'updated' => $updatedDate,
+              'summary' => $node->body_summary
+            ); 
+          }
+         // No content
+          if (empty($items)) {
+            $block['content'] = t('No articles available.');  
+          } 
+          else {
+            // Pass data through theme function. 
+            $block['content'] = theme('invention_articles_myfunction', $items);
+          }
+        } 
+      return $block;
+    }    
+  }
+
+/**
+ * Implementation of hook_theme()
+ */
+function invention_articles_theme ($existing, $type, $theme, $path) {
+    $functions = array();
+    $items = NULL;
+    // Registers theme_mymodule_myfunction().
+    $functions['invention_articles_myfunction'] = array(
+      'arguments' => $items
+    );
+    return $functions;
+}
+
+/**
+ * Implements theme function for invention_articles_myfunction().
+ */
+function theme_invention_articles_myfunction($items) {
+    $output = '<div class="list-group">';
+    foreach ($items as $item) {
+        if (is_array($item) && array_key_exists('title', $item) && array_key_exists('updated', $item) && array_key_exists('summary', $item)) {
+            $output .= 
+            '<a href="'.$item['link'].'" class="list-group-item">
+                <h5>'.$item['title'].'</h5>
+                <small class="text-muted">'.$item['updated']->format('j-M-Y H:i').'</small>
+                <p>'.$item['summary'].'</p>
+            </a>';
+        }
+    }
+    $output .='</div>';
+    
+    return $output;
+  }
+
+  /**
+ * Implements hook_menu().
+ */
+function invention_articles_menu() {
+    $items = array();
+  
+    $items['admin/config/content/invention_articles'] = array(
+      'title' => 'Invention articles',
+      'description' => 'Configuration for Invention articles module',
+      'page callback' => 'drupal_get_form',
+      'page arguments' => array('invention_articles_form'),
+      'access arguments' => array('access administration pages'),
+      'type' => MENU_NORMAL_ITEM,
+    );
+  
+    return $items;
+  }
+
+  /**
+ * Page callback: Invention Articles settings
+ *
+ * @see invention_articles_menu()
+ */
+function invention_articles_form($form, &$form_state) {
+    $form['invention_articles_max'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Maximum number of articles'),
+      '#default_value' => variable_get('invention_articles_max', 5),
+      '#size' => 2,
+      '#maxlength' => 2,
+      '#description' => t('The maximum number of articles to display in the block.'),
+      '#required' => TRUE,
+    );
+  
+    return system_settings_form($form);
+  }
+
+  /**
+ * Implements validation from the Form API.
+ * 
+ * @param $form
+ *   A structured array containing the elements and properties of the form.
+ * @param $form_state
+ *   An array that stores information about the form's current state 
+ *   during processing.
+ */
+function invention_articles_form_validate($form, &$form_state){
+    $max_num = $form_state['values']['invention_articles_max'];
+    if (!is_numeric($max_num)){
+      form_set_error('invention_articles_max', t('You must enter a number for the maximum number of articles to display.'));
+    }
+    elseif ($max_num <= 0){
+      form_set_error('invention_articles_max', t('Maximum number of articles to display must be positive.'));
+    }
+  }

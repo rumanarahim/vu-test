@@ -1,0 +1,5 @@
+name = Invention Articles
+description = A block module that lists articles with the word "Invention" in the title
+core = 7.x
+version = 1.0
+configure = admin/config/content/invention_articles
